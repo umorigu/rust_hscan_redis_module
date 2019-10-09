@@ -1,21 +1,24 @@
 extern crate libc;
 use libc::{c_int, size_t};
 
-const MODULE_NAME: &'static str = "rusthello";
-
-const REDISMODULE_OK: c_int = 0;
-const REDISMODULE_ERR: c_int = 1;
-
+const MODULE_NAME: &'static str = "rusthscanhello";
 const REDISMODULE_APIVER_1: c_int = 1;
 
 pub enum RedisModuleCtx {}
 pub enum RedisModuleString {}
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+#[repr(C)]
+pub enum Status {
+    Ok = 0,  // const REDISMODULE_OK: c_int = 0;
+    Err = 1, // const REDISMODULE_ERR: c_int = 1;
+}
+
 pub type RedisModuleCmdFunc = extern "C" fn(
     ctx: *mut RedisModuleCtx,
     argv: *mut *mut RedisModuleString,
     argc: c_int,
-) -> c_int;
+) -> Status;
 
 extern "C" {
     pub fn Export_RedisModule_Init(
@@ -23,7 +26,7 @@ extern "C" {
         modulename: *const u8,
         module_version: c_int,
         api_version: c_int,
-    ) -> c_int;
+    ) -> Status;
 
     // int RedisModule_CreateCommand(RedisModuleCtx *ctx, const char *name,
     //   RedisModuleCmdFunc cmdfunc, const char *strflags, int firstkey,
@@ -36,24 +39,24 @@ extern "C" {
         firstkey: c_int,
         lastkey: c_int,
         keystep: c_int,
-    ) -> c_int;
+    ) -> Status;
 
     // int RedisModule_ReplyWithStringBuffer(RedisModuleCtx *ctx,
     //   const char *buf, size_t len);
     static RedisModule_ReplyWithStringBuffer:
-        extern "C" fn(ctx: *mut RedisModuleCtx, str: *const u8, len: size_t) -> c_int;
+        extern "C" fn(ctx: *mut RedisModuleCtx, str: *const u8, len: size_t) -> Status;
 }
 
 extern "C" fn RustHello_RedisCommand(
     ctx: *mut RedisModuleCtx,
     argv: *mut *mut RedisModuleString,
     argc: c_int,
-) -> c_int {
+) -> Status {
     unsafe {
         const HELLO: &'static str = "hello";
         RedisModule_ReplyWithStringBuffer(ctx, format!("{}", HELLO).as_ptr(), HELLO.len());
     }
-    return REDISMODULE_OK;
+    return Status::Ok;
 }
 
 #[no_mangle]
@@ -61,7 +64,7 @@ pub extern "C" fn RedisModule_OnLoad(
     ctx: *mut RedisModuleCtx,
     argv: *mut *mut RedisModuleString,
     argc: c_int,
-) -> c_int {
+) -> Status {
     unsafe {
         Export_RedisModule_Init(
             ctx,
@@ -77,10 +80,10 @@ pub extern "C" fn RedisModule_OnLoad(
             0,
             0,
             0,
-        ) == REDISMODULE_ERR
+        ) == Status::Err
         {
-            return REDISMODULE_ERR;
+            return Status::Err;
         }
     }
-    return REDISMODULE_OK;
+    return Status::Ok;
 }

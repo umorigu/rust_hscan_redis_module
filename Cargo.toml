@@ -1,5 +1,5 @@
 [package]
-name = "rust_simple_redis_module"
+name = "rust_hscanhello_redis_module"
 version = "0.1.0"
 authors = ["umorigu <umorigu@gmail.com>"]
 edition = "2018"
