@@ -47,13 +47,13 @@ extern "C" {
         extern "C" fn(ctx: *mut RedisModuleCtx, str: *const u8, len: size_t) -> Status;
 }
 
-extern "C" fn RustHello_RedisCommand(
+extern "C" fn hscan_hello_redis_command(
     ctx: *mut RedisModuleCtx,
-    argv: *mut *mut RedisModuleString,
-    argc: c_int,
+    _argv: *mut *mut RedisModuleString,
+    _argc: c_int,
 ) -> Status {
     unsafe {
-        const HELLO: &'static str = "hello";
+        const HELLO: &'static str = "hscanhello";
         RedisModule_ReplyWithStringBuffer(ctx, format!("{}", HELLO).as_ptr(), HELLO.len());
     }
     return Status::Ok;
@@ -62,8 +62,8 @@ extern "C" fn RustHello_RedisCommand(
 #[no_mangle]
 pub extern "C" fn RedisModule_OnLoad(
     ctx: *mut RedisModuleCtx,
-    argv: *mut *mut RedisModuleString,
-    argc: c_int,
+    _argv: *mut *mut RedisModuleString,
+    _argc: c_int,
 ) -> Status {
     unsafe {
         Export_RedisModule_Init(
@@ -75,7 +75,7 @@ pub extern "C" fn RedisModule_OnLoad(
         if RedisModule_CreateCommand(
             ctx,
             format!("{}\0", "rusthello").as_ptr(),
-            RustHello_RedisCommand,
+            hscan_hello_redis_command,
             format!("{}\0", "readonly").as_ptr(),
             0,
             0,
