@@ -1,5 +1,6 @@
 extern crate libc;
 use libc::{c_int, c_long, c_ulong, size_t};
+use std::string;
 
 const MODULE_NAME: &'static str = "rusthscanhello";
 const REDISMODULE_APIVER_1: c_int = 1;
@@ -58,6 +59,9 @@ extern "C" {
     static RedisModule_ReplyWithStringBuffer:
         extern "C" fn(ctx: *mut RedisModuleCtx, str: *const u8, len: size_t) -> Status;
 
+    // int RedisModule_WrongArity(RedisModuleCtx *ctx);
+    static RedisModule_WrongArity: extern "C" fn(ctx: *mut RedisModuleCtx) -> Status;
+
     // void RedisModule_Log(RedisModuleCtx *ctx, const char *levelstr, const char *fmt, ...);
     static RedisModule_Log:
         extern "C" fn(ctx: *mut RedisModuleCtx, levelstr: *const u8, fmt: *const u8);
@@ -90,16 +94,62 @@ extern "C" {
     // void RedisModule_ReplySetArrayLength(RedisModuleCtx *ctx, long len);
     static RedisModule_ReplySetArrayLength: extern "C" fn(ctx: *mut RedisModuleCtx, len: c_long);
 
+    // const char *RedisModule_StringPtrLen(const RedisModuleString *str, size_t *len);
+    static RedisModule_StringPtrLen:
+        extern "C" fn(str: *mut RedisModuleString, len: *mut size_t) -> *const u8;
+}
+
+// https://github.com/brandur/redis-cell/blob/master/src/redis/raw.rs
+pub fn string_ptr_len(str: *mut RedisModuleString, len: *mut size_t) -> *const u8 {
+    unsafe { RedisModule_StringPtrLen(str, len) }
+}
+
+// parse_args() from https://github.com/brandur/redis-cell/blob/master/src/redis/mod.rs
+fn from_byte_string(byte_str: *const u8, length: size_t) -> Result<String, string::FromUtf8Error> {
+    let mut vec_str: Vec<u8> = Vec::with_capacity(length as usize);
+    for offset in 0..length {
+        let byte: u8 = unsafe { *byte_str.add(offset) };
+        vec_str.insert(offset, byte);
+    }
+
+    String::from_utf8(vec_str)
+}
+
+// parse_args() from https://github.com/brandur/redis-cell/blob/master/src/redis/mod.rs
+fn manifest_redis_string(
+    redis_str: *mut RedisModuleString,
+) -> Result<String, string::FromUtf8Error> {
+    let mut length: size_t = 0;
+    let bytes = string_ptr_len(redis_str, &mut length);
+    from_byte_string(bytes, length)
+}
+
+// parse_args() from https://github.com/brandur/redis-cell/blob/master/src/redis/mod.rs
+fn parse_args(
+    argv: *mut *mut RedisModuleString,
+    argc: c_int,
+) -> Result<Vec<String>, string::FromUtf8Error> {
+    let mut args: Vec<String> = Vec::with_capacity(argc as usize);
+    for i in 0..argc {
+        let redis_str = unsafe { *argv.offset(i as isize) };
+        args.push(manifest_redis_string(redis_str)?);
+    }
+    Ok(args)
 }
 
 extern "C" fn hscan_hello_redis_command(
     ctx: *mut RedisModuleCtx,
-    _argv: *mut *mut RedisModuleString,
-    _argc: c_int,
+    argv: *mut *mut RedisModuleString,
+    argc: c_int,
 ) -> Status {
     unsafe {
-        const HELLO: &'static str = "hscanhello";
-        RedisModule_ReplyWithStringBuffer(ctx, format!("{}", HELLO).as_ptr(), HELLO.len());
+        let args = parse_args(argv, argc).unwrap();
+        if args.len() != 2 {
+            return RedisModule_WrongArity(ctx);
+        }
+        let key_str = &args[0];
+        //const HELLO: &'static str = "hscanhello";
+        RedisModule_ReplyWithStringBuffer(ctx, format!("{}", key_str).as_ptr(), key_str.len());
     }
     return Status::Ok;
 }
