@@ -137,23 +137,41 @@ fn parse_args(
     Ok(args)
 }
 
+fn rm_log(ctx: *mut RedisModuleCtx, level_str: &str, fmt: &str) {
+    unsafe {
+        RedisModule_Log(
+            ctx,
+            format!("{}", level_str).as_ptr(),
+            format!("{}", fmt).as_ptr(),
+        );
+    }
+}
+fn rm_wrong_arity(ctx: *mut RedisModuleCtx) -> Status {
+    unsafe {
+        return RedisModule_WrongArity(ctx);
+    }
+}
+fn rm_reply_with_string_buffer(ctx: *mut RedisModuleCtx, s: &str) -> Status {
+    unsafe {
+        return RedisModule_ReplyWithStringBuffer(ctx, format!("{}", s).as_ptr(), s.len());
+    }
+}
+
 extern "C" fn hscan_hello_redis_command(
     ctx: *mut RedisModuleCtx,
     argv: *mut *mut RedisModuleString,
     argc: c_int,
 ) -> Status {
-    unsafe {
-        let args = parse_args(argv, argc).unwrap();
-        if args.len() != 2 {
-            return RedisModule_WrongArity(ctx);
-        }
-        let key_str = &args[0];
-        //const HELLO: &'static str = "hscanhello";
-        RedisModule_ReplyWithStringBuffer(ctx, format!("{}", key_str).as_ptr(), key_str.len());
+    let args = parse_args(argv, argc).unwrap();
+    if args.len() != 2 {
+        return rm_wrong_arity(ctx);
     }
+    let key_str = &args[0];
+
+    rm_log(ctx, "notice", "Before call()");
+    rm_reply_with_string_buffer(ctx, key_str);
     return Status::Ok;
 }
-
 #[no_mangle]
 pub extern "C" fn RedisModule_OnLoad(
     ctx: *mut RedisModuleCtx,
