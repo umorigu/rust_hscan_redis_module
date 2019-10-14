@@ -189,22 +189,31 @@ fn rm_call(
     }
 }
 fn rm_call_reply_type(reply: *mut RedisModuleCallReply) -> ReplyType {
-    unsafe {
-        return RedisModule_CallReplyType(reply);
-    }
+    unsafe { RedisModule_CallReplyType(reply) }
 }
 fn rm_call_reply_length(reply: *mut RedisModuleCallReply) -> c_ulong {
-    unsafe {
-        return RedisModule_CallReplyLength(reply);
-    }
+    unsafe { RedisModule_CallReplyLength(reply) }
 }
-fn rm_call_reply_array_element(reply: *mut RedisModuleCallReply, idx: c_ulong) -> *mut RedisModuleCallReply {
+fn rm_call_reply_array_element(
+    reply: *mut RedisModuleCallReply,
+    idx: c_ulong,
+) -> *mut RedisModuleCallReply {
     unsafe {
         return RedisModule_CallReplyArrayElement(reply, idx);
     }
 }
 fn rm_call_reply_string_ptr(str: *mut RedisModuleCallReply, len: *mut size_t) -> *const u8 {
     unsafe { RedisModule_CallReplyStringPtr(str, len) }
+}
+
+fn rm_reply_with_long_long(ctx: *mut RedisModuleCtx, ll: c_ulong) {
+    unsafe { RedisModule_ReplyWithLongLong(ctx, ll) }
+}
+fn rm_reply_set_array_length(ctx: *mut RedisModuleCtx, len: c_long) {
+    unsafe { RedisModule_ReplySetArrayLength(ctx, len) }
+}
+fn rm_free_call_reply(reply: *mut RedisModuleCallReply) {
+    unsafe { RedisModule_FreeCallReply(reply) }
 }
 
 extern "C" fn hscan_hello_redis_command(
@@ -237,12 +246,37 @@ extern "C" fn hscan_hello_redis_command(
         let mut len = 0;
         let s = rm_call_reply_string_ptr(r0, &mut len);
         match from_byte_string(s, len) {
-            Ok(result) => { let _ = rm_reply_with_string_buffer(ctx, &result); },
+            Ok(result) => {
+                let _ = rm_reply_with_string_buffer(ctx, &result);
+            }
             Err(_msg) => rm_log(ctx, "error", "from_utf8_error"),
         }
     } else {
         rm_reply_with_string_buffer(ctx, "ERR");
     }
+    let r1 = rm_call_reply_array_element(reply, 1);
+    let length = rm_call_reply_length(r1);
+
+    for i in 0..length {
+        let r = rm_call_reply_array_element(r1, i);
+        if rm_call_reply_type(r) == ReplyType::String {
+            let mut len = 0;
+            let s = rm_call_reply_string_ptr(r, &mut len);
+            match from_byte_string(s, len) {
+                Ok(result) => {
+                    let _ = rm_reply_with_string_buffer(ctx, &result);
+                }
+                Err(_msg) => rm_log(ctx, "error", "from_utf8_error"),
+            }
+        } else {
+            rm_reply_with_string_buffer(ctx, "[non str]");
+        }
+    }
+    rm_free_call_reply(reply);
+    rm_log(ctx, "notice", "NOTICE!");
+    rm_reply_with_long_long(ctx, length);
+    rm_reply_with_string_buffer(ctx, "end");
+    rm_reply_set_array_length(ctx, (length + 4) as i64);
     return Status::Ok;
 }
 #[no_mangle]
