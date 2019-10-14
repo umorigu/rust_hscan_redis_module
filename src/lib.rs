@@ -5,6 +5,8 @@ use std::string;
 const MODULE_NAME: &'static str = "rusthscanhello";
 const REDISMODULE_APIVER_1: c_int = 1;
 
+const REDISMODULE_POSTPONED_ARRAY_LEN: c_long = -1;
+
 pub enum RedisModuleCtx {}
 pub enum RedisModuleString {}
 pub enum RedisModuleCallReply {}
@@ -70,6 +72,15 @@ extern "C" {
     static RedisModule_ReplyWithArray:
         extern "C" fn(ctx: *mut RedisModuleCtx, len: c_long) -> Status;
 
+    // RedisModuleCallReply *RedisModule_Call(RedisModuleCtx *ctx, const char *cmdname, const char *fmt, ...);
+    static RedisModule_Call: extern "C" fn(
+        ctx: *mut RedisModuleCtx,
+        cmdname: *const u8,
+        fmt: *const u8,
+        arg0: *const u8,
+        arg1: *const u8,
+    ) -> *mut RedisModuleCallReply;
+
     // int RedisModule_CallReplyType(RedisModuleCallReply *reply);
     static RedisModule_CallReplyType: extern "C" fn(reply: *mut RedisModuleCallReply) -> ReplyType;
 
@@ -83,7 +94,7 @@ extern "C" {
 
     // const char *RedisModule_CallReplyStringPtr(RedisModuleCallReply *reply, size_t *len);
     static RedisModule_CallReplyStringPtr:
-        extern "C" fn(reply: *mut RedisModuleCallReply, len: c_ulong) -> *const u8;
+        extern "C" fn(reply: *mut RedisModuleCallReply, len: *mut size_t) -> *const u8;
 
     // void RedisModule_FreeCallReply(RedisModuleCallReply *reply);
     static RedisModule_FreeCallReply: extern "C" fn(reply: *mut RedisModuleCallReply);
@@ -151,10 +162,49 @@ fn rm_wrong_arity(ctx: *mut RedisModuleCtx) -> Status {
         return RedisModule_WrongArity(ctx);
     }
 }
+fn rm_reply_with_array(ctx: *mut RedisModuleCtx, len: c_long) -> Status {
+    unsafe {
+        return RedisModule_ReplyWithArray(ctx, len);
+    }
+}
 fn rm_reply_with_string_buffer(ctx: *mut RedisModuleCtx, s: &str) -> Status {
     unsafe {
         return RedisModule_ReplyWithStringBuffer(ctx, format!("{}", s).as_ptr(), s.len());
     }
+}
+fn rm_call(
+    ctx: *mut RedisModuleCtx,
+    cmdname: &str,
+    arg0: &str,
+    arg1: &str,
+) -> *mut RedisModuleCallReply {
+    unsafe {
+        return RedisModule_Call(
+            ctx,
+            format!("{}\0", cmdname).as_ptr(),
+            format!("{}\0", "cc").as_ptr(),
+            format!("{}\0", arg0).as_ptr(),
+            format!("{}\0", arg1).as_ptr(),
+        );
+    }
+}
+fn rm_call_reply_type(reply: *mut RedisModuleCallReply) -> ReplyType {
+    unsafe {
+        return RedisModule_CallReplyType(reply);
+    }
+}
+fn rm_call_reply_length(reply: *mut RedisModuleCallReply) -> c_ulong {
+    unsafe {
+        return RedisModule_CallReplyLength(reply);
+    }
+}
+fn rm_call_reply_array_element(reply: *mut RedisModuleCallReply, idx: c_ulong) -> *mut RedisModuleCallReply {
+    unsafe {
+        return RedisModule_CallReplyArrayElement(reply, idx);
+    }
+}
+fn rm_call_reply_string_ptr(str: *mut RedisModuleCallReply, len: *mut size_t) -> *const u8 {
+    unsafe { RedisModule_CallReplyStringPtr(str, len) }
 }
 
 extern "C" fn hscan_hello_redis_command(
@@ -166,10 +216,33 @@ extern "C" fn hscan_hello_redis_command(
     if args.len() != 2 {
         return rm_wrong_arity(ctx);
     }
-    let key_str = &args[0];
+    let key_str = &args[1];
 
     rm_log(ctx, "notice", "Before call()");
+    rm_reply_with_array(ctx, REDISMODULE_POSTPONED_ARRAY_LEN);
     rm_reply_with_string_buffer(ctx, key_str);
+    let reply = rm_call(ctx, "HSCAN", key_str, "0");
+    if rm_call_reply_type(reply) != ReplyType::Array {
+        rm_log(ctx, "warning", "not array");
+        return Status::Err;
+    }
+    rm_log(ctx, "notice", "After call()");
+    let length0 = rm_call_reply_length(reply);
+    if length0 != 2 {
+        rm_log(ctx, "warning", "length0 is NOT 2");
+        return Status::Err;
+    }
+    let r0 = rm_call_reply_array_element(reply, 0);
+    if rm_call_reply_type(r0) == ReplyType::String {
+        let mut len = 0;
+        let s = rm_call_reply_string_ptr(r0, &mut len);
+        match from_byte_string(s, len) {
+            Ok(result) => { let _ = rm_reply_with_string_buffer(ctx, &result); },
+            Err(_msg) => rm_log(ctx, "error", "from_utf8_error"),
+        }
+    } else {
+        rm_reply_with_string_buffer(ctx, "ERR");
+    }
     return Status::Ok;
 }
 #[no_mangle]
