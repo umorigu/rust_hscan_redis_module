@@ -294,7 +294,7 @@ pub extern "C" fn RedisModule_OnLoad(
         );
         if RedisModule_CreateCommand(
             ctx,
-            format!("{}\0", "rusthello").as_ptr(),
+            format!("{}\0", "rusthscan").as_ptr(),
             hscan_hello_redis_command,
             format!("{}\0", "readonly").as_ptr(),
             0,
